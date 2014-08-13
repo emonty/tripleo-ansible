@@ -76,6 +76,24 @@ def _parse_config():
         configs.auth_url = configs.auth_url.replace('/v2.0','/v3')
     return configs
 
+
+# The following is copy pasted from an upcoming
+# core module "lib/ansible/module_utils/openstack.py" Once we're using 1.8
+# this should be replaced with a line at the bottom of the file:
+# from ansible.module_utils.openstack import *
+def openstack_find_nova_addresses(addresses, ext_tag, key_name=None):
+
+    ret = []
+    for (k, v) in addresses.iteritems():
+        if key_name and k == key_name:
+            ret.extend([addrs['addr'] for addrs in v])
+        else:
+            for interface_spec in v:
+                if 'OS-EXT-IPS:type' in interface_spec and interface_spec['OS-EXT-IPS:type'] == ext_tag:
+                    ret.append(interface_spec['addr'])
+    return ret
+
+
 class HeatInventory(object):
     def __init__(self, configs):
         self.configs = configs
@@ -103,15 +121,11 @@ class HeatInventory(object):
                 if res.resource_type == 'OS::Nova::Server':
                     server = self.nclient.servers.get(res.physical_resource_id)
                     name = server.name
-                    private = [ x['addr'] for x in getattr(server,
-                                                           'addresses').itervalues().next()
-                               if x['OS-EXT-IPS:type'] == 'fixed']
+                    private = openstack_find_nova_addresses(getattr(server, 'addresses'), 'fixed', 'private')
+                    public = openstack_find_nova_addresses(getattr(server, 'addresses'), 'floating', 'public')
+
                     if private:
                         private = private[0]
-                    public  = [ x['addr'] for x in getattr(server,
-                                                           'addresses').itervalues().next()
-                               if x['OS-EXT-IPS:type'] == 'floating']
-
                     if public:
                         public = public[0]
                     addr = server.accessIPv4 or public or private
@@ -154,15 +168,10 @@ class HeatInventory(object):
                     server = self.nclient.servers.get(res.physical_resource_id)
                     if self.configs.host in server.name:
                         name = server.name
-                        private = [ x['addr'] for x in getattr(server,
-                                                               'addresses').itervalues().next()
-                                   if x['OS-EXT-IPS:type'] == 'fixed']
+                        private = openstack_find_nova_addresses(getattr(server, 'addresses'), 'fixed', 'private')
+                        public = openstack_find_nova_addresses(getattr(server, 'addresses'), 'floating', 'public')
                         if private:
                             private = private[0]
-                        public  = [ x['addr'] for x in getattr(server,
-                                                               'addresses').itervalues().next()
-                                   if x['OS-EXT-IPS:type'] == 'floating']
-
                         if public:
                             public = public[0]
                         addr = server.accessIPv4 or public or private
